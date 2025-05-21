@@ -30,6 +30,10 @@ var FSHADER_SOURCE = `
   uniform int u_whichTexture; 
   uniform vec3 u_lightPos;
   uniform vec3 u_cameraPos;
+  uniform bool u_lightOn;
+  uniform bool u_lightSpotOn;
+  uniform vec3 u_lightDirection;
+  uniform float u_limit;
   varying vec4 v_VertPos;
   void main() {
     if(u_whichTexture == -3){
@@ -67,7 +71,24 @@ var FSHADER_SOURCE = `
 
     vec3 diffuse = vec3(gl_FragColor) * nDotL * 0.7;
     vec3 ambient = vec3(gl_FragColor) * 0.3;
-    gl_FragColor = vec4(specular+diffuse+ambient, 1.0); 
+    
+    if (u_lightOn) {
+        vec3 finalColor = specular + diffuse + ambient;
+        
+        if (u_lightSpotOn) {
+            vec3 spotDirection = normalize(u_lightDirection);
+            float spot = dot(L, spotDirection);
+            
+            if (spot > u_limit) {
+                float spotF = smoothstep(u_limit, 1.0, spot);
+                finalColor = mix(finalColor * 0.9, finalColor, spotF);
+            } else {
+                finalColor *= 0.9;
+            }
+        }
+        
+        gl_FragColor = vec4(finalColor, 1.0);
+    }
   }`;
 
 let canvas;
@@ -86,6 +107,10 @@ let u_Sampler2;
 let u_whichTexture;
 let u_lightPos;
 let u_cameraPos;
+let u_lightOn;
+let u_lightSpotOn;
+let u_lightDirection;
+let u_limit;
 
 let t_XBackBody = 0
 let t_YBackBody = 0
@@ -104,6 +129,10 @@ let r_tailAngle = 0;
 let r_tail =0
 let g_normalOn = false; 
 let g_lightPos=[0,1,-2];
+let g_lightOn = true;
+let g_lightSpotOn = true;
+let g_lightDirection = [0.0, 1.0, 0.0];
+let g_limit = Math.cos(Math.PI/6);
 
 let meat1c = 0;
 let meat2c = 0;
@@ -116,6 +145,8 @@ let satisfied = 0;
 function addActionsforHtmlUI() {
   document.getElementById('normalOn').onclick = function() {g_normalOn=true; };
   document.getElementById('normalOff').onclick = function() {g_normalOn=false;};
+  document.getElementById('lightOn').onclick = function() {g_lightOn=true; };
+  document.getElementById('lightOff').onclick = function() {g_lightOn=false;};
   document.getElementById("lightSlideX").addEventListener('mousemove', function(ev) {if(ev.buttons == 1) {g_lightPos[0] = this.value/100; renderAllShapes();}});
   document.getElementById("lightSlideY").addEventListener('mousemove', function(ev) {if(ev.buttons == 1) {g_lightPos[1] = this.value/100; renderAllShapes();}});
   document.getElementById("lightSlideZ").addEventListener('mousemove', function(ev) {if(ev.buttons == 1) {g_lightPos[2] = this.value/100; renderAllShapes();}});
@@ -207,6 +238,26 @@ function connectVariablesToGLSL() {
   if (!u_Sampler2) {
     console.log('Failed to get the storage location of u_Sampler2');
     return false;
+  }
+  u_lightOn = gl.getUniformLocation(gl.program, 'u_lightOn');
+  if(!u_lightOn) {
+    console.log("failed to get u_lightOn");
+    return;
+  }
+  u_lightSpotOn = gl.getUniformLocation(gl.program, 'u_lightSpotOn');
+  if(!u_lightSpotOn) {
+    console.log("failed to get u_lightSpotOn");
+    return;
+  }
+  u_lightDirection = gl.getUniformLocation(gl.program, 'u_lightDirection');
+  if(!u_lightDirection) {
+    console.log("failed to get u_lightDirection");
+    return;
+  }
+  u_limit = gl.getUniformLocation(gl.program, 'u_limit');
+  if(!u_limit) {
+    console.log("failed to get u_limit");
+    return;
   }
   var identityM = new Matrix4();
   gl.uniformMatrix4fv(u_ModelMatrix, false, identityM.elements);
@@ -471,6 +522,10 @@ function renderAllShapes() {
 
   gl.uniform3f(u_lightPos, g_lightPos[0], g_lightPos[1], g_lightPos[2]);
   gl.uniform3f(u_cameraPos, camera.eye.x, camera.eye.y, camera.eye.z);
+  gl.uniform1i(u_lightOn, g_lightOn);
+  gl.uniform1i(u_lightSpotOn, g_lightSpotOn);
+  gl.uniform3fv(u_lightDirection, g_lightDirection);
+  gl.uniform1f(u_limit, g_limit);
 
   var light = new Cube();
   light.color = [2,2,0,1];
